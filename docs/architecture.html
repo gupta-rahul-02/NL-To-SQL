@@ -1,0 +1,895 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>NL-to-SQL Architecture</title>
+<style>
+  :root {
+    --bg: #0f1117;
+    --surface: #1a1d27;
+    --surface2: #22263a;
+    --border: #2e3250;
+    --accent: #6c8aff;
+    --accent2: #a78bfa;
+    --green: #34d399;
+    --yellow: #fbbf24;
+    --red: #f87171;
+    --orange: #fb923c;
+    --text: #e2e8f0;
+    --muted: #8892b0;
+    --font: 'Segoe UI', system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: var(--font); line-height: 1.6; }
+
+  header {
+    background: linear-gradient(135deg, #1a1d27 0%, #0f1117 100%);
+    border-bottom: 1px solid var(--border);
+    padding: 2.5rem 3rem;
+    text-align: center;
+  }
+  header h1 { font-size: 2.2rem; font-weight: 700; color: var(--accent); letter-spacing: -0.5px; }
+  header p { color: var(--muted); margin-top: 0.5rem; font-size: 1.05rem; }
+
+  main { max-width: 1200px; margin: 0 auto; padding: 2.5rem 2rem 4rem; }
+
+  section { margin-bottom: 3.5rem; }
+  h2 {
+    font-size: 1.3rem; font-weight: 600; color: var(--accent2);
+    border-left: 3px solid var(--accent2); padding-left: 0.75rem;
+    margin-bottom: 1.5rem;
+  }
+  h3 { font-size: 1rem; font-weight: 600; color: var(--text); margin-bottom: 0.5rem; }
+
+  /* ── Tech Stack badges ── */
+  .stack-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+    gap: 1rem;
+  }
+  .stack-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 1rem 1.2rem;
+    text-align: center;
+  }
+  .stack-card .icon { font-size: 1.8rem; margin-bottom: 0.4rem; }
+  .stack-card .name { font-weight: 600; font-size: 0.9rem; }
+  .stack-card .role { font-size: 0.75rem; color: var(--muted); margin-top: 0.2rem; }
+
+  /* ── Architecture diagram ── */
+  .arch-diagram {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 2rem;
+    overflow-x: auto;
+  }
+  .arch-row {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0;
+    flex-wrap: nowrap;
+    margin-bottom: 0.5rem;
+  }
+  .arch-box {
+    border-radius: 10px;
+    padding: 0.9rem 1.3rem;
+    text-align: center;
+    min-width: 130px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    line-height: 1.4;
+    position: relative;
+  }
+  .arch-box small { display: block; font-weight: 400; font-size: 0.7rem; opacity: 0.8; margin-top: 0.2rem; }
+  .box-blue   { background: #1e3a5f; border: 1.5px solid #3b82f6; color: #93c5fd; }
+  .box-purple { background: #2d1d4e; border: 1.5px solid #a78bfa; color: #c4b5fd; }
+  .box-green  { background: #1a3a2e; border: 1.5px solid #34d399; color: #6ee7b7; }
+  .box-orange { background: #3a2610; border: 1.5px solid #fb923c; color: #fdba74; }
+  .box-red    { background: #3a1a1a; border: 1.5px solid #f87171; color: #fca5a5; }
+  .box-yellow { background: #3a2e10; border: 1.5px solid #fbbf24; color: #fde68a; }
+  .box-gray   { background: #1e2233; border: 1.5px solid #4b5563; color: #9ca3af; }
+
+  .arrow {
+    font-size: 1.5rem;
+    color: var(--muted);
+    padding: 0 0.4rem;
+    user-select: none;
+  }
+  .arrow-down {
+    text-align: center;
+    font-size: 1.4rem;
+    color: var(--muted);
+    margin: 0.3rem 0;
+  }
+
+  /* ── Request flow steps ── */
+  .flow-steps {
+    counter-reset: step;
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+  }
+  .flow-step {
+    display: flex;
+    align-items: flex-start;
+    gap: 1.2rem;
+    position: relative;
+    padding-bottom: 1.8rem;
+  }
+  .flow-step:last-child { padding-bottom: 0; }
+  .flow-step::before {
+    content: "";
+    position: absolute;
+    left: 18px;
+    top: 38px;
+    bottom: 0;
+    width: 2px;
+    background: var(--border);
+  }
+  .flow-step:last-child::before { display: none; }
+  .step-num {
+    counter-increment: step;
+    min-width: 38px; height: 38px;
+    border-radius: 50%;
+    background: var(--accent);
+    color: #fff;
+    font-weight: 700;
+    font-size: 0.9rem;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+    z-index: 1;
+  }
+  .step-body { padding-top: 0.4rem; }
+  .step-body h3 { color: var(--accent); font-size: 0.95rem; }
+  .step-body p { color: var(--muted); font-size: 0.85rem; margin-top: 0.3rem; }
+  .step-body code {
+    background: var(--surface2); border: 1px solid var(--border);
+    padding: 0.15rem 0.45rem; border-radius: 4px;
+    font-family: 'Cascadia Code', 'Consolas', monospace;
+    font-size: 0.78rem; color: var(--green);
+  }
+
+  /* ── Service cards ── */
+  .service-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 1.2rem;
+  }
+  .service-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 1.3rem;
+  }
+  .service-card .svc-header {
+    display: flex; align-items: center; gap: 0.7rem; margin-bottom: 0.8rem;
+  }
+  .svc-icon {
+    width: 36px; height: 36px; border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1.2rem; flex-shrink: 0;
+  }
+  .svc-title { font-weight: 600; font-size: 0.95rem; }
+  .svc-subtitle { font-size: 0.75rem; color: var(--muted); }
+  .svc-list { list-style: none; padding: 0; }
+  .svc-list li {
+    font-size: 0.8rem; color: var(--muted);
+    padding: 0.3rem 0; border-bottom: 1px solid var(--border);
+    display: flex; align-items: flex-start; gap: 0.5rem;
+  }
+  .svc-list li:last-child { border-bottom: none; }
+  .svc-list li::before { content: "›"; color: var(--accent); font-size: 1rem; line-height: 1.2; flex-shrink: 0; }
+
+  /* ── API table ── */
+  table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+  th {
+    background: var(--surface2); color: var(--accent2);
+    text-align: left; padding: 0.6rem 1rem; font-weight: 600;
+    border-bottom: 2px solid var(--border);
+  }
+  td {
+    padding: 0.6rem 1rem; border-bottom: 1px solid var(--border);
+    vertical-align: top;
+  }
+  tr:hover td { background: var(--surface2); }
+  .method {
+    display: inline-block; padding: 0.1rem 0.5rem;
+    border-radius: 4px; font-size: 0.72rem; font-weight: 700;
+    font-family: monospace;
+  }
+  .get    { background: #1a3a2e; color: #34d399; }
+  .post   { background: #1e3a5f; color: #60a5fa; }
+  .delete { background: #3a1a1a; color: #f87171; }
+  td code { font-family: 'Consolas', monospace; font-size: 0.78rem; color: var(--green); }
+
+  /* ── RAG pipeline ── */
+  .pipeline {
+    display: flex; align-items: stretch; gap: 0; flex-wrap: nowrap;
+    overflow-x: auto;
+  }
+  .pipeline-step {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 1rem 1.2rem;
+    min-width: 160px;
+    flex: 1;
+    text-align: center;
+    font-size: 0.82rem;
+  }
+  .pipeline-step .ps-icon { font-size: 1.6rem; margin-bottom: 0.4rem; }
+  .pipeline-step .ps-title { font-weight: 600; color: var(--text); }
+  .pipeline-step .ps-desc { color: var(--muted); font-size: 0.75rem; margin-top: 0.3rem; }
+  .pipeline-arrow {
+    display: flex; align-items: center;
+    color: var(--accent); font-size: 1.4rem; padding: 0 0.3rem;
+    flex-shrink: 0;
+  }
+
+  /* ── Data flow diagram ── */
+  .data-flow {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 2rem;
+  }
+
+  .df-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.6rem;
+  }
+  .df-label {
+    min-width: 120px;
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: var(--muted);
+    text-align: right;
+    padding-right: 0.5rem;
+  }
+  .df-content {
+    display: flex; align-items: center; gap: 0.4rem; flex: 1; flex-wrap: wrap;
+  }
+  .df-item {
+    padding: 0.3rem 0.7rem;
+    border-radius: 6px;
+    font-size: 0.78rem;
+    font-weight: 500;
+    white-space: nowrap;
+  }
+  .df-arr { color: var(--muted); font-size: 1rem; }
+
+  /* ── Port table ── */
+  .port-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 1rem;
+  }
+  .port-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 1rem 1.2rem;
+    display: flex; align-items: center; gap: 1rem;
+  }
+  .port-num {
+    font-size: 1.1rem; font-weight: 700;
+    color: var(--accent); font-family: monospace; min-width: 50px;
+  }
+  .port-info .pi-name { font-weight: 600; font-size: 0.9rem; }
+  .port-info .pi-desc { font-size: 0.75rem; color: var(--muted); }
+
+  /* ── Fallback chain ── */
+  .fallback-row {
+    display: flex; align-items: center; gap: 0; flex-wrap: wrap;
+  }
+  .fb-item {
+    padding: 0.6rem 1rem; border-radius: 8px;
+    font-size: 0.82rem; font-weight: 600;
+  }
+  .fb-arrow { color: var(--muted); padding: 0 0.4rem; font-size: 1.1rem; }
+  .fb-label { font-size: 0.72rem; color: var(--muted); margin-top: 0.2rem; text-align:center; }
+
+  .divider { border: none; border-top: 1px solid var(--border); margin: 2.5rem 0; }
+
+  footer {
+    text-align: center; color: var(--muted); font-size: 0.8rem;
+    padding: 2rem; border-top: 1px solid var(--border);
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>🧠 NL-to-SQL AI — Architecture Documentation</h1>
+  <p>Natural Language → SQL query system powered by local LLMs &amp; RAG</p>
+</header>
+
+<main>
+
+  <!-- ═══════════════════════════════════════════════════════ TECH STACK -->
+  <section>
+    <h2>Tech Stack</h2>
+    <div class="stack-grid">
+      <div class="stack-card">
+        <div class="icon">⚛️</div>
+        <div class="name">Next.js 14</div>
+        <div class="role">Frontend UI</div>
+      </div>
+      <div class="stack-card">
+        <div class="icon">🐍</div>
+        <div class="name">FastAPI</div>
+        <div class="role">Backend API</div>
+      </div>
+      <div class="stack-card">
+        <div class="icon">🦙</div>
+        <div class="name">Ollama</div>
+        <div class="role">Local LLM inference</div>
+      </div>
+      <div class="stack-card">
+        <div class="icon">🗄️</div>
+        <div class="name">SQL Server</div>
+        <div class="role">Data warehouse</div>
+      </div>
+      <div class="stack-card">
+        <div class="icon">🔴</div>
+        <div class="name">Redis</div>
+        <div class="role">Conversation memory</div>
+      </div>
+      <div class="stack-card">
+        <div class="icon">📐</div>
+        <div class="name">LangChain</div>
+        <div class="role">LLM orchestration</div>
+      </div>
+      <div class="stack-card">
+        <div class="icon">🔢</div>
+        <div class="name">NumPy + Ollama Embeddings</div>
+        <div class="role">Vector similarity (RAG)</div>
+      </div>
+      <div class="stack-card">
+        <div class="icon">🌐</div>
+        <div class="name">Nginx</div>
+        <div class="role">Reverse proxy (Docker)</div>
+      </div>
+    </div>
+  </section>
+
+  <hr class="divider" />
+
+  <!-- ═══════════════════════════════════════════════════════ SYSTEM ARCHITECTURE -->
+  <section>
+    <h2>System Architecture</h2>
+    <div class="arch-diagram">
+
+      <!-- Row 1: User -->
+      <div class="arch-row">
+        <div class="arch-box box-blue">
+          👤 User Browser
+          <small>localhost:3000</small>
+        </div>
+      </div>
+
+      <div class="arrow-down">↕</div>
+
+      <!-- Row 2: Frontend -->
+      <div class="arch-row">
+        <div class="arch-box box-purple">
+          ⚛️ Next.js Frontend
+          <small>React · TypeScript · Tailwind</small>
+        </div>
+      </div>
+
+      <div class="arrow-down">↕ HTTP REST /api/*</div>
+
+      <!-- Row 3: Backend -->
+      <div class="arch-row">
+        <div class="arch-box box-green" style="min-width:190px">
+          🐍 FastAPI Backend
+          <small>localhost:8000</small>
+        </div>
+      </div>
+
+      <!-- Row 4: Backend services fan-out -->
+      <div class="arrow-down">↓</div>
+
+      <div class="arch-row" style="gap:1rem; flex-wrap:wrap; justify-content:center;">
+
+        <div style="display:flex; flex-direction:column; align-items:center; gap:0.4rem;">
+          <div class="arch-box box-yellow" style="min-width:150px">
+            🧠 LLM Service
+            <small>LangChain + Ollama</small>
+          </div>
+          <div style="font-size:0.7rem; color:var(--muted);">sqlcoder:7b-q4_0</div>
+        </div>
+
+        <div style="display:flex; flex-direction:column; align-items:center; gap:0.4rem;">
+          <div class="arch-box box-orange" style="min-width:150px">
+            🔍 RAG Service
+            <small>NumPy cosine sim</small>
+          </div>
+          <div style="font-size:0.7rem; color:var(--muted);">nomic-embed-text</div>
+        </div>
+
+        <div style="display:flex; flex-direction:column; align-items:center; gap:0.4rem;">
+          <div class="arch-box box-red" style="min-width:150px">
+            💬 Memory Service
+            <small>Redis / in-memory</small>
+          </div>
+          <div style="font-size:0.7rem; color:var(--muted);">session history</div>
+        </div>
+
+        <div style="display:flex; flex-direction:column; align-items:center; gap:0.4rem;">
+          <div class="arch-box box-gray" style="min-width:150px">
+            🗄️ SQL Service
+            <small>SQLAlchemy + pyodbc</small>
+          </div>
+          <div style="font-size:0.7rem; color:var(--muted);">query execution</div>
+        </div>
+
+      </div>
+
+      <!-- Row 5: External dependencies -->
+      <div class="arrow-down">↓</div>
+
+      <div class="arch-row" style="gap:1.5rem; flex-wrap:wrap; justify-content:center;">
+        <div class="arch-box box-yellow" style="min-width:140px">
+          🦙 Ollama
+          <small>localhost:11434</small>
+        </div>
+        <div class="arch-box box-orange" style="min-width:140px">
+          📄 Vector Store
+          <small>chroma_data/vector_store.json</small>
+        </div>
+        <div class="arch-box box-red" style="min-width:140px">
+          🔴 Redis
+          <small>localhost:6379</small>
+        </div>
+        <div class="arch-box box-gray" style="min-width:140px">
+          🗄️ MSSQL Server
+          <small>MRIPF4ZBY2A:1433</small>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <hr class="divider" />
+
+  <!-- ═══════════════════════════════════════════════════════ REQUEST FLOW -->
+  <section>
+    <h2>Request Flow — How a Question Becomes a Query</h2>
+    <div class="flow-steps">
+
+      <div class="flow-step">
+        <div class="step-num">1</div>
+        <div class="step-body">
+          <h3>User types a natural language question</h3>
+          <p>e.g. <em>"Show me all invoices with status INVC from last month"</em><br>
+          The Next.js frontend sends a <code>POST /api/chat</code> request with the question and a UUID session ID.</p>
+        </div>
+      </div>
+
+      <div class="flow-step">
+        <div class="step-num">2</div>
+        <div class="step-body">
+          <h3>Load conversation history (Memory Service)</h3>
+          <p>FastAPI reads prior turns for the session from <strong>Redis</strong> (or falls back to an in-memory dictionary if Redis is unavailable). History is formatted as <code>User: … / Assistant: …</code> pairs and injected into the prompt for context continuity.</p>
+        </div>
+      </div>
+
+      <div class="flow-step">
+        <div class="step-num">3</div>
+        <div class="step-body">
+          <h3>Retrieve schema context (RAG Service)</h3>
+          <p>The question is embedded using <strong>nomic-embed-text</strong> via Ollama. Cosine similarity is computed against 2,530 pre-indexed table embeddings stored in <code>vector_store.json</code>. Tables with a name-prefix match to query words receive a score boost. The <strong>top 8</strong> most relevant table schemas are returned as context.</p>
+        </div>
+      </div>
+
+      <div class="flow-step">
+        <div class="step-num">4</div>
+        <div class="step-body">
+          <h3>Generate SQL (LLM Service)</h3>
+          <p>A structured prompt is sent to <strong>sqlcoder:7b-q4_0</strong> via Ollama (temperature = 0 for deterministic output). The prompt contains: dialect rules, the top-8 schema context, conversation history, and the user's question. The LLM output is cleaned of markdown fences and prompt artifacts. The model is instructed to <em>only use table/column names from the provided schema</em>.</p>
+        </div>
+      </div>
+
+      <div class="flow-step">
+        <div class="step-num">5</div>
+        <div class="step-body">
+          <h3>Validate &amp; execute SQL (SQL Service)</h3>
+          <p>The generated SQL is checked against a disallowed-statement regex (<code>INSERT, UPDATE, DELETE, DROP</code>, etc.). If it passes, SQLAlchemy executes it against <strong>MSSQL</strong> via pyodbc. Results are capped at <code>MAX_RESULT_ROWS=500</code>.</p>
+        </div>
+      </div>
+
+      <div class="flow-step">
+        <div class="step-num">6</div>
+        <div class="step-body">
+          <h3>Explain the SQL (LLM Service)</h3>
+          <p>A second, lighter LLM call generates a plain-English explanation of what the SQL does and why it answers the question (2–4 sentences).</p>
+        </div>
+      </div>
+
+      <div class="flow-step">
+        <div class="step-num">7</div>
+        <div class="step-body">
+          <h3>Save turn &amp; return response</h3>
+          <p>The full turn (question + SQL + explanation) is persisted back to Redis/memory. The response — containing <code>sql</code>, <code>explanation</code>, <code>result</code> (columns + rows), and any <code>error</code> — is returned to the frontend as JSON.</p>
+        </div>
+      </div>
+
+      <div class="flow-step">
+        <div class="step-num">8</div>
+        <div class="step-body">
+          <h3>Render in UI</h3>
+          <p>The frontend renders the SQL query in a code block, the explanation as prose, and the result rows in a <strong>sortable data table</strong>. Errors are shown inline with the assistant message.</p>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <hr class="divider" />
+
+  <!-- ═══════════════════════════════════════════════════════ RAG PIPELINE -->
+  <section>
+    <h2>RAG Pipeline — Schema Indexing &amp; Retrieval</h2>
+    <div class="pipeline">
+
+      <div class="pipeline-step">
+        <div class="ps-icon">🗄️</div>
+        <div class="ps-title">MSSQL Introspection</div>
+        <div class="ps-desc">Single bulk query reads INFORMATION_SCHEMA for all tables, columns, PKs &amp; FKs in schema <code>dbo</code>.</div>
+      </div>
+      <div class="pipeline-arrow">→</div>
+
+      <div class="pipeline-step">
+        <div class="ps-icon">📝</div>
+        <div class="ps-title">Text Serialisation</div>
+        <div class="ps-desc">Each table is formatted as:<br><code>Table: INVC\nColumns:\n  - INVOICE (char) [PK]…</code></div>
+      </div>
+      <div class="pipeline-arrow">→</div>
+
+      <div class="pipeline-step">
+        <div class="ps-icon">🔢</div>
+        <div class="ps-title">Embed (Ollama)</div>
+        <div class="ps-desc">Each table text is sent to <code>nomic-embed-text</code>. Up to 3 retries per text. Truncated to 2000 chars.</div>
+      </div>
+      <div class="pipeline-arrow">→</div>
+
+      <div class="pipeline-step">
+        <div class="ps-icon">💾</div>
+        <div class="ps-title">Persist to JSON</div>
+        <div class="ps-desc">Embeddings saved in batches to <code>chroma_data/vector_store.json</code>. Survives server restarts.</div>
+      </div>
+      <div class="pipeline-arrow">→</div>
+
+      <div class="pipeline-step">
+        <div class="ps-icon">🔍</div>
+        <div class="ps-title">Query-time Retrieval</div>
+        <div class="ps-desc">Question embedded → cosine similarity vs all 2,530 vectors → name-prefix boost → top-8 returned.</div>
+      </div>
+
+    </div>
+
+    <br>
+    <div style="background:var(--surface2); border:1px solid var(--border); border-radius:10px; padding:1.2rem; font-size:0.83rem; color:var(--muted);">
+      <strong style="color:var(--text);">Name-prefix boost logic:</strong>
+      &nbsp; If a table's exact name appears in the query → <span style="color:var(--green);">+0.30 score</span>.
+      &nbsp; If the first 3 chars of the table name appear inside any query word → <span style="color:var(--yellow);">+0.15 score</span>.
+      &nbsp; <em>Example: query "invoice details" → "INV" prefix found in "invoice" → INVC table gets +0.15, rising from rank #26 to #1.</em>
+    </div>
+  </section>
+
+  <hr class="divider" />
+
+  <!-- ═══════════════════════════════════════════════════════ SERVICES -->
+  <section>
+    <h2>Backend Services Detail</h2>
+    <div class="service-grid">
+
+      <div class="service-card">
+        <div class="svc-header">
+          <div class="svc-icon" style="background:#1e3a5f;">🧠</div>
+          <div>
+            <div class="svc-title">LLM Service</div>
+            <div class="svc-subtitle">llm_service.py</div>
+          </div>
+        </div>
+        <ul class="svc-list">
+          <li>Model: <code>sqlcoder:7b-q4_0</code> via Ollama</li>
+          <li>Temperature 0 — deterministic SQL output</li>
+          <li><code>generate_sql()</code> — builds structured prompt, calls LLM, strips output artefacts</li>
+          <li><code>explain_sql()</code> — generates plain-English explanation</li>
+          <li>LangChain <code>PromptTemplate</code> + <code>OllamaLLM</code> chain</li>
+        </ul>
+      </div>
+
+      <div class="service-card">
+        <div class="svc-header">
+          <div class="svc-icon" style="background:#2d1d4e;">🔍</div>
+          <div>
+            <div class="svc-title">RAG Service</div>
+            <div class="svc-subtitle">rag_service.py</div>
+          </div>
+        </div>
+        <ul class="svc-list">
+          <li>Embedding model: <code>nomic-embed-text</code></li>
+          <li>Pure-Python cosine similarity (no ChromaDB/C++)</li>
+          <li><code>index_schema()</code> — introspects DB, embeds, persists JSON</li>
+          <li><code>retrieve_schema_context()</code> — top-8 with name-prefix boost</li>
+          <li>JSON vector store survives restarts</li>
+        </ul>
+      </div>
+
+      <div class="service-card">
+        <div class="svc-header">
+          <div class="svc-icon" style="background:#1a3a2e;">💬</div>
+          <div>
+            <div class="svc-title">Memory Service</div>
+            <div class="svc-subtitle">memory_service.py</div>
+          </div>
+        </div>
+        <ul class="svc-list">
+          <li>Primary: Redis async (<code>redis.asyncio</code>)</li>
+          <li>Fallback: in-memory dict (no Redis needed)</li>
+          <li>TTL: 86,400 s (24 h) per session</li>
+          <li>Session key: <code>nl2sql:session:{uuid}</code></li>
+          <li>Stores <code>role|content</code> entries in Redis list</li>
+        </ul>
+      </div>
+
+      <div class="service-card">
+        <div class="svc-header">
+          <div class="svc-icon" style="background:#3a2610;">🗄️</div>
+          <div>
+            <div class="svc-title">SQL Service</div>
+            <div class="svc-subtitle">sql_service.py</div>
+          </div>
+        </div>
+        <ul class="svc-list">
+          <li>SQLAlchemy engine with pyodbc (ODBC Driver 17)</li>
+          <li>Connection pool: size 5, overflow 10</li>
+          <li>Safety regex blocks INSERT/UPDATE/DELETE/DROP/EXEC…</li>
+          <li><code>get_schema_info()</code> — single bulk INFORMATION_SCHEMA query</li>
+          <li>Results capped at <code>MAX_RESULT_ROWS=500</code></li>
+        </ul>
+      </div>
+
+    </div>
+  </section>
+
+  <hr class="divider" />
+
+  <!-- ═══════════════════════════════════════════════════════ API ENDPOINTS -->
+  <section>
+    <h2>API Endpoints</h2>
+    <div style="background:var(--surface); border:1px solid var(--border); border-radius:12px; overflow:hidden;">
+      <table>
+        <thead>
+          <tr>
+            <th>Method</th>
+            <th>Path</th>
+            <th>Description</th>
+            <th>Key Params</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><span class="method post">POST</span></td>
+            <td><code>/api/chat</code></td>
+            <td>Main NL→SQL endpoint. Returns SQL, explanation, result rows.</td>
+            <td><code>question</code>, <code>session_id</code></td>
+          </tr>
+          <tr>
+            <td><span class="method delete">DELETE</span></td>
+            <td><code>/api/chat/{session_id}</code></td>
+            <td>Clear conversation history for a session.</td>
+            <td><code>session_id</code></td>
+          </tr>
+          <tr>
+            <td><span class="method post">POST</span></td>
+            <td><code>/api/schema/index</code></td>
+            <td>Re-introspect DB schema and rebuild the vector store. Run after schema changes.</td>
+            <td>—</td>
+          </tr>
+          <tr>
+            <td><span class="method get">GET</span></td>
+            <td><code>/api/schema/tables</code></td>
+            <td>Return list of all indexed tables and their column info.</td>
+            <td>—</td>
+          </tr>
+          <tr>
+            <td><span class="method get">GET</span></td>
+            <td><code>/health</code></td>
+            <td>Health check — reports DB, Redis, and Ollama status.</td>
+            <td>—</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p style="margin-top:0.8rem; font-size:0.8rem; color:var(--muted);">Full interactive docs at <strong style="color:var(--accent);">http://localhost:8000/docs</strong></p>
+  </section>
+
+  <hr class="divider" />
+
+  <!-- ═══════════════════════════════════════════════════════ PORTS -->
+  <section>
+    <h2>Ports &amp; Services (Local Dev)</h2>
+    <div class="port-grid">
+      <div class="port-card">
+        <div class="port-num">:3000</div>
+        <div class="port-info">
+          <div class="pi-name">Next.js Frontend</div>
+          <div class="pi-desc">Chat UI · TypeScript · Tailwind CSS</div>
+        </div>
+      </div>
+      <div class="port-card">
+        <div class="port-num">:8000</div>
+        <div class="port-info">
+          <div class="pi-name">FastAPI Backend</div>
+          <div class="pi-desc">REST API · Python 3.13 · Uvicorn</div>
+        </div>
+      </div>
+      <div class="port-card">
+        <div class="port-num">:11434</div>
+        <div class="port-info">
+          <div class="pi-name">Ollama</div>
+          <div class="pi-desc">LLM inference · sqlcoder + nomic-embed-text</div>
+        </div>
+      </div>
+      <div class="port-card">
+        <div class="port-num">:1433</div>
+        <div class="port-info">
+          <div class="pi-name">SQL Server</div>
+          <div class="pi-desc">MRIPF4ZBY2A · RMX6M_Man2 database</div>
+        </div>
+      </div>
+      <div class="port-card">
+        <div class="port-num">:6379</div>
+        <div class="port-info">
+          <div class="pi-name">Redis</div>
+          <div class="pi-desc">Conversation memory (optional — has in-memory fallback)</div>
+        </div>
+      </div>
+      <div class="port-card">
+        <div class="port-num">:80</div>
+        <div class="port-info">
+          <div class="pi-name">Nginx (Docker only)</div>
+          <div class="pi-desc">Reverse proxy · routes /api/* → backend, /* → frontend</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <hr class="divider" />
+
+  <!-- ═══════════════════════════════════════════════════════ RESILIENCE -->
+  <section>
+    <h2>Resilience &amp; Fallbacks</h2>
+    <div style="display:flex; flex-direction:column; gap:1.2rem;">
+
+      <div style="background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:1.2rem;">
+        <h3 style="color:var(--red); margin-bottom:0.8rem;">🔴 Redis unavailable</h3>
+        <div class="fallback-row">
+          <div class="fb-item" style="background:#1e2233; border:1px solid #4b5563; color:#9ca3af;">Redis connection fails on startup</div>
+          <div class="fb-arrow">→</div>
+          <div class="fb-item" style="background:#1a3a2e; border:1px solid #34d399; color:#6ee7b7;">Falls back to in-memory dict</div>
+          <div class="fb-arrow">→</div>
+          <div class="fb-item" style="background:#1a3a2e; border:1px solid #34d399; color:#6ee7b7;">Conversations work normally (reset on restart)</div>
+        </div>
+      </div>
+
+      <div style="background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:1.2rem;">
+        <h3 style="color:var(--yellow); margin-bottom:0.8rem;">⚠️ Embedding fails during retrieval</h3>
+        <div class="fallback-row">
+          <div class="fb-item" style="background:#1e2233; border:1px solid #4b5563; color:#9ca3af;">Ollama embed call fails</div>
+          <div class="fb-arrow">→</div>
+          <div class="fb-item" style="background:#3a2e10; border:1px solid #fbbf24; color:#fde68a;">Returns first 8 store entries as context</div>
+          <div class="fb-arrow">→</div>
+          <div class="fb-item" style="background:#3a2e10; border:1px solid #fbbf24; color:#fde68a;">Query still attempted with degraded schema context</div>
+        </div>
+      </div>
+
+      <div style="background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:1.2rem;">
+        <h3 style="color:var(--orange); margin-bottom:0.8rem;">🛡️ SQL safety guard</h3>
+        <div class="fallback-row">
+          <div class="fb-item" style="background:#1e2233; border:1px solid #4b5563; color:#9ca3af;">LLM generates non-SELECT SQL</div>
+          <div class="fb-arrow">→</div>
+          <div class="fb-item" style="background:#3a1a1a; border:1px solid #f87171; color:#fca5a5;">SQLSafetyError raised</div>
+          <div class="fb-arrow">→</div>
+          <div class="fb-item" style="background:#1a3a2e; border:1px solid #34d399; color:#6ee7b7;">Error returned to user, DB never touched</div>
+        </div>
+      </div>
+
+      <div style="background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:1.2rem;">
+        <h3 style="color:var(--accent); margin-bottom:0.8rem;">📄 Schema indexing partial failure</h3>
+        <div class="fallback-row">
+          <div class="fb-item" style="background:#1e2233; border:1px solid #4b5563; color:#9ca3af;">Indexing fails mid-way</div>
+          <div class="fb-arrow">→</div>
+          <div class="fb-item" style="background:#1e3a5f; border:1px solid #3b82f6; color:#93c5fd;">Already-saved batches preserved on disk</div>
+          <div class="fb-arrow">→</div>
+          <div class="fb-item" style="background:#1e3a5f; border:1px solid #3b82f6; color:#93c5fd;">Partial count reported in API response</div>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <hr class="divider" />
+
+  <!-- ═══════════════════════════════════════════════════════ DOCKER -->
+  <section>
+    <h2>Docker Compose Layout (Production)</h2>
+    <div style="background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:1.5rem; font-size:0.83rem;">
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:1.5rem; flex-wrap:wrap;">
+
+        <div>
+          <h3 style="margin-bottom:0.8rem; color:var(--accent2);">Services</h3>
+          <div style="display:flex; flex-direction:column; gap:0.6rem;">
+            <div style="display:flex; gap:0.7rem; align-items:center;">
+              <span style="background:#1e3a5f; border:1px solid #3b82f6; color:#93c5fd; padding:0.2rem 0.6rem; border-radius:5px; font-size:0.75rem; font-weight:600;">ollama</span>
+              <span style="color:var(--muted);">ollama/ollama:latest · port 11434 · GPU-optional</span>
+            </div>
+            <div style="display:flex; gap:0.7rem; align-items:center;">
+              <span style="background:#3a1a1a; border:1px solid #f87171; color:#fca5a5; padding:0.2rem 0.6rem; border-radius:5px; font-size:0.75rem; font-weight:600;">redis</span>
+              <span style="color:var(--muted);">redis:7-alpine · port 6379 · AOF persistence · 512 MB cap</span>
+            </div>
+            <div style="display:flex; gap:0.7rem; align-items:center;">
+              <span style="background:#1a3a2e; border:1px solid #34d399; color:#6ee7b7; padding:0.2rem 0.6rem; border-radius:5px; font-size:0.75rem; font-weight:600;">backend</span>
+              <span style="color:var(--muted);">./backend/Dockerfile · port 8000 · depends on ollama+redis</span>
+            </div>
+            <div style="display:flex; gap:0.7rem; align-items:center;">
+              <span style="background:#2d1d4e; border:1px solid #a78bfa; color:#c4b5fd; padding:0.2rem 0.6rem; border-radius:5px; font-size:0.75rem; font-weight:600;">frontend</span>
+              <span style="color:var(--muted);">./frontend/Dockerfile · port 3000 · depends on backend</span>
+            </div>
+            <div style="display:flex; gap:0.7rem; align-items:center;">
+              <span style="background:#1e2233; border:1px solid #4b5563; color:#9ca3af; padding:0.2rem 0.6rem; border-radius:5px; font-size:0.75rem; font-weight:600;">nginx</span>
+              <span style="color:var(--muted);">nginx:alpine · port 80 · reverse proxy to backend+frontend</span>
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <h3 style="margin-bottom:0.8rem; color:var(--accent2);">Nginx Routing</h3>
+          <div style="display:flex; flex-direction:column; gap:0.5rem;">
+            <div style="display:flex; gap:0.6rem; align-items:center;">
+              <code style="background:var(--surface2); padding:0.2rem 0.5rem; border-radius:4px; font-size:0.78rem; color:var(--green);">/api/*</code>
+              <span style="color:var(--muted); font-size:0.8rem;">→ FastAPI backend:8000</span>
+            </div>
+            <div style="display:flex; gap:0.6rem; align-items:center;">
+              <code style="background:var(--surface2); padding:0.2rem 0.5rem; border-radius:4px; font-size:0.78rem; color:var(--green);">/health</code>
+              <span style="color:var(--muted); font-size:0.8rem;">→ FastAPI backend:8000</span>
+            </div>
+            <div style="display:flex; gap:0.6rem; align-items:center;">
+              <code style="background:var(--surface2); padding:0.2rem 0.5rem; border-radius:4px; font-size:0.78rem; color:var(--green);">/*</code>
+              <span style="color:var(--muted); font-size:0.8rem;">→ Next.js frontend:3000</span>
+            </div>
+          </div>
+          <br>
+          <h3 style="margin-bottom:0.8rem; color:var(--accent2);">Volumes</h3>
+          <div style="display:flex; flex-direction:column; gap:0.4rem; font-size:0.8rem; color:var(--muted);">
+            <div><code style="color:var(--green);">ollama_data</code> — model weights</div>
+            <div><code style="color:var(--green);">redis_data</code> — conversation persistence</div>
+            <div><code style="color:var(--green);">chroma_data</code> — vector store JSON</div>
+            <div><code style="color:var(--green);">./schema_docs</code> — markdown schema docs (read-only)</div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<footer>
+  NL-to-SQL AI · Architecture Documentation · Generated 2026-06-25
+</footer>
+
+</body>
+</html>

@@ -1,0 +1,101 @@
+services:
+
+  # ── Ollama (local LLM inference) ────────────────────────────────────────────
+  ollama:
+    image: ollama/ollama:latest
+    container_name: nl2sql_ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    # GPU support: uncomment if you have NVIDIA GPU + nvidia-container-toolkit
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # ── Redis (conversation memory) ─────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: nl2sql_redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # ── FastAPI Backend ──────────────────────────────────────────────────────────
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: nl2sql_backend
+    env_file: .env
+    ports:
+      - "8000:8000"
+    volumes:
+      - chroma_data:/app/chroma_data
+      - ./schema_docs:/app/schema_docs:ro
+    # Allows the container to resolve the Windows host machine's SQL Server by name.
+    # "host-gateway" maps to the Docker host IP automatically on Windows/Mac.
+    extra_hosts:
+      - "MRIPF4ZBY2A:host-gateway"
+    depends_on:
+      ollama:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  # ── Next.js Frontend ─────────────────────────────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: nl2sql_frontend
+    env_file: .env
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost/api
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+  # ── Nginx (reverse proxy) ────────────────────────────────────────────────────
+  nginx:
+    image: nginx:alpine
+    container_name: nl2sql_nginx
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - backend
+      - frontend
+    restart: unless-stopped
+
+volumes:
+  ollama_data:
+  redis_data:
+  chroma_data:
